@@ -4,6 +4,7 @@ HomeStation <- R6::R6Class("HomeStation",
                        list(connection = NULL,
                             cdmSchema = NULL,
                             cohortTableName = NULL,
+                            homeStation = NULL,
                             initialize = function(connection,
                                                   cdmSchema,
                                                   cohortTableName){
@@ -21,20 +22,16 @@ HomeStation$set("public", "getHomeStation",
                                        I(self$cohortTableName))
 
 
-                  conditionOccurrence <- dplyr::tbl(self$connection,
-                                                     I(paste0(self$cdmSchema,
-                                                              ".condition_occurrence"))) |>
-                    dplyr::select(person_id,
-                                  condition_start_date,
-                                  visit_detail_id) |>
-                    dplyr::rename(subject_id = person_id)
-
-
-                  visitDetail <- dplyr::tbl(self$connection,
+                  visitOccurrence <- dplyr::tbl(self$connection,
                                             I(paste0(self$cdmSchema,
-                                                     ".visit_detail"))) |>
-                    dplyr::select(visit_detail_id,
-                                  care_site_id)
+                                                     ".visit_occurrence"))) |>
+                    dplyr::select(person_id,
+                                  visit_occurrence_id,
+                                  visit_start_date,
+                                  care_site_id) |>
+                    dplyr::rename(subject_id = person_id) |>
+                    filter(care_site_id != 0)
+
 
                   careSite <- dplyr::tbl(self$connection,
                                          I(paste0(self$cdmSchema,
@@ -43,21 +40,37 @@ HomeStation$set("public", "getHomeStation",
 
 
                   dplyr::left_join(cohort,
-                                   conditionOccurrence) |>
-                    dplyr::filter(between(condition_start_date,
-                                          cohort_start_date,
-                                          cohort_end_date)) |>
+                                   visitOccurrence) |>
+                    dplyr::filter(between(visit_start_date,
+                                          sql("DATEADD(year, -1, cohort_start_date)"),
+                                          cohort_start_date)) |>
                     dplyr::distinct(cohort_definition_id,
                              subject_id,
-                             condition_start_date,
+                             visit_start_date,
                              .keep_all = TRUE) |>
-                    dplyr::left_join(visitDetail) |>
-                    dplyr::filter(!is.na(care_site_id)) |>
                     dplyr::left_join(careSite) |>
-                    dplyr::select(-visit_detail_id, -care_site_id) |>
                     dplyr::rename(station = x_institutioncode) |>
+                    dplyr::arrange(cohort_definition_id,
+                                   subject_id,
+                                   cohort_start_date,
+                                   desc(visit_start_date)) |>
+                    dplyr::distinct(cohort_definition_id,
+                                    subject_id,
+                                    cohort_start_date,
+                                    .keep_all = TRUE) |>
+                    dplyr::select(-visit_occurrence_id,
+                                  -visit_start_date,
+                                  -care_site_id) |>
                     dplyr::collect() -> self$homeStation
 
                   invisible(self)
 
                 })
+
+
+HomeStation$set("public", "plot",
+                function(){
+
+
+                })
+
