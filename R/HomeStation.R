@@ -1,113 +1,92 @@
-# todo: person table (non-longitudinal) care site as tie-breaker
-
-HomeStation <- R6::R6Class("HomeStation",
-                       list(connection = NULL,
-                            cdmSchema = NULL,
-                            cohortTableName = NULL,
-                            visitMethod = NULL,
-                            homeStation = NULL,
-                            preDays = NULL,
-                            cohort = NULL,
-                            visitOccurrence = NULL,
-                            careSite = NULL,
-
-                            initialize = function(connection,
-                                                  cdmSchema,
-                                                  cohortTableName,
-                                                  visitMethod = "mostRecent",
-                                                  preDays = 365,
-                                                  primaryCriteriaType = ){
-                              stopifnot(class(connection) == "DatabaseConnectorJdbcConnection")
-                              stopifnot(visitMethod %in% c("mostRecent", "majority"))
-                              stopifnot(primaryCriteriaType %in% c("condition", "drug", "person"))
-
-                              self$connection <- connection
-                              self$cdmSchema <- cdmSchema
-                              self$cohortTableName <- cohortTableName
-                              self$visitMethod <- visitMethod
-                              self$preDays <- preDays
-
-                            })
-)
 
 
-HomeStation$set("private", "rankingFunction",
-                function(){
-                  if (self$visitMethod == "mostRecent") {
-                    return(\(x) dplyr::arrange(x,
-                                               cohort_definition_id,
-                                               subject_id,
-                                               cohort_start_date,
-                                               desc(visit_start_date)) |>
-                      dplyr::select(-visit_occurrence_id,
-                             -visit_start_date,
-                             -care_site_id))
+#' Creates settings object
+#'
+#' @param connectionDetails
+#' @param con
+#' @param cohortSchema
+#' @param cohortTable
+#' @param cdmSchema
+#' @param method
+#'
+#' @returns list of class "homeCareSiteSettings"
+#' @export
+#'
+#' @examples
+createHomeCareSiteSettings <- function(connectionDetails,
+                                      con = NULL,
+                                      cohortSchema,
+                                      cohortTable,
+                                      cdmSchema,
+                                      method = NULL,
+                                      careSiteColumn = "care_site_name") {
 
-                  } else if (self$visitMethod == "majority") {
-                    return(\(x) dplyr::count(x,
-                                             cohort_definition_id,
-                                             subject_id,
-                                             cohort_start_date,
-                                             cohort_end_date,
-                                             station) |>
-                             dplyr::arrange(cohort_definition_id,
-                                            subject_id,
-                                            cohort_start_date,
-                                            cohort_end_date,
-                                            desc(n)) |>
-                             dplyr::select(-n))
-                  }
-                }
-)
+  checkmate::assertClass(connectionDetails, "ConnectionDetails")
+  checkmate::assertClass(con, "DatabaseConnectorJdbcConnection")
 
+  stopifnot(DatabaseConnector::existsTable(con, cohortSchema, cohortTable))
 
-HomeStation$set("public", "getHomeStation",
-                function(){
+  settings <- list(connectionDetails = connectionDetails,
+                   con = con,
+                   cohortSchema = cohortSchema,
+                   cohortTable = cohortTable,
+                   cdmSchema = cdmSchema,
+                   method = method,
+                   careSiteColumn = careSiteColumn)
 
-                  self$cohort <- dplyr::tbl(self$connection,
-                                            I(self$cohortTableName))
+  class(settings) <- "homeCareSiteSettings"
 
+  return(settings)
 
-                  self$visitOccurrence <- dplyr::tbl(self$connection,
-                                                     I(paste0(self$cdmSchema,
-                                                              ".visit_occurrence"))) |>
-                    dplyr::select(person_id,
-                                  visit_occurrence_id,
-                                  visit_start_date,
-                                  care_site_id) |>
-                    dplyr::rename(subject_id = person_id) |>
-                    dplyr::filter(care_site_id != 0)
+}
 
 
-                  self$careSite <- dplyr::tbl(self$connection,
-                                              I(paste0(self$cdmSchema,
-                                                       ".care_site"))) |>
-                    dplyr::select(care_site_id, x_institutioncode)
+#' Derive home care site
+#'
+#' @param settings object of class "homeCareSiteSettings"
+#'
+#' @returns NULL invisibly, via side effect writes to server table
+#' @export
+#'
+#' @examples
+deriveHomeCareSite <- function(settings) {
+
+  start <-  Sys.time()
+
+  if (is.null(con)) {
+    con <- DatabaseConnector::connect(settings$connectionDetails)
+    on.exit(DatabaseConnector::disconnect(connection))
+  }
+
+  templateSql <- SqlRender::readSql(system.file("sql/mostRecent.sql",
+                                        package = "HomeCareSite",
+                                        mustWork = TRUE))
 
 
-                  rankCareSite <- private$rankingFunction()
+  renderedSql <- SqlRender::render(templateSql,
+                                   cohort_schema = settings$cohortSchema,
+                                   cohort_table = settings$cohortTable,
+                                   cohort_table_new = paste0(settings$cohortTable,
+                                                             "_care_site"),
+                                   cdm_schema = settings$cdmSchema,
+                                   care_site_column = settings$careSiteColumn)
 
 
-                  dplyr::left_join(self$cohort,
-                                   self$visitOccurrence) |>
-                    dplyr::filter(between(visit_start_date,
-                                          sql(sprintf("DATEADD(year, %s, cohort_start_date)",
-                                                      self$preDays*-1)),
-                                          cohort_start_date)) |>
-                    dplyr::distinct(cohort_definition_id,
-                             subject_id,
-                             visit_start_date,
-                             .keep_all = TRUE) |>
-                    dplyr::left_join(self$careSite) |>
-                    dplyr::rename(station = x_institutioncode) |>
-                    rankCareSite() |>
-                    dplyr::distinct(cohort_definition_id,
-                                    subject_id,
-                                    cohort_start_date,
-                                    .keep_all = TRUE) |>
-                    dplyr::collect() -> self$homeStation
+  translatedSql <- SqlRender::translate(renderedSql,
+                                        settings$connectionDetails$dbms)
 
-                  invisible(self)
+  DatabaseConnector::executeSql(
+    settings$con,
+    translatedSql,
+    progressBar = FALSE,
+    reportOverallTime = FALSE
+  )
 
-                })
+  delta <- Sys.time() - start
+  rlang::inform(paste0("Deriving home care site took ",
+                       round(delta, 2),
+                       attr(delta, "units")))
 
+  return(invisible(NULL))
+
+}

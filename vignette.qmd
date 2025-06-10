@@ -1,5 +1,5 @@
 ---
-title: "HomeStation Vignette"
+title: "HomeCareSite Vignette"
 author: "Bill O'Brien"
 format: 
   html:
@@ -10,70 +10,70 @@ editor: source
 
 ## Introduction
 
-The goal of HomeStation is to associate entries of a cohort table with a Veterans Affairs home station.
+The goal of HomeCareSite is to associate entries of a cohort table with a "home" care site. 
+
+The initial implementation identifies the most recent care site prior to cohort entry, and other options will be offered, e.g. care site with plurality of visits. 
 
 ## Example use
 
 ```{r output=FALSE}
 
-library(HomeStation)
+library(HomeCareSite) 
 library(ggplot2) 
 library(dplyr)
 library(forcats)
 
-Sys.setenv(DATABASECONNECTOR_JAR_FOLDER = "O:/VINCI_OHDSI/JDBC/sqljdbc_6.0/enu/jre8")
-
 connectionDetails <- DatabaseConnector::createConnectionDetails(
   dbms = "sql server",
-  server = Sys.getenv(myDevServer))
+  server = Sys.getenv("MY_DEV_SERVER"))
 
 con <- DatabaseConnector::connect(connectionDetails)
 
 ```
 
-Instantiate an R6 object with parameters for the database connection, CDM schema, and cohort table.
-
-The `getHomeStation` method writes a dataframe within the object consisting of the cohort table plus a column for derived home station.
-
-```{r output=FALSE}
-
-x <- HomeStation$
-  new(con, 
-      "cdw_omop.omopv5", 
-      "ORD_OHDSI.wjo.dalbavancin", 
-      "majority")$
-  getHomeStation() 
-
-x$homeStation %>% arrange(subject_id)
-
-```
-
-```{r output=FALSE}
-
-x <- HomeStation$
-  new(con, 
-      "cdw_omop.omopv5", 
-      "ORD_OHDSI.wjo.dalbavancin", 
-      "mostRecent")$
-  getHomeStation() 
-
-x$homeStation %>% arrange(subject_id)
-
-```
+This function returns an S3 object with settings for database and table name information. The optional `careSiteColumn` parameter specifies which column in the `care_site` table is used (the example below is non-standard). 
 
 ```{r}
 
-x$homeStation |>
-  count(station) |>
-  filter(n >= 25) |> 
-  ggplot(aes(x = n, 
-             y = fct_reorder(station, n),
-             fill = station)) +
-  theme(legend.position = 'none') +
-  geom_col() +
-  labs(x = 'Number of cohort entries',
-       y = 'VA station code',
-       title = 'Home station of members of dalbavancin cohort',
-       subtitle = 'Excludes stations with n < 25')
+homeCareSiteSettings <- createHomeCareSiteSettings(
+  connectionDetails, 
+  con,
+  cohortSchema = Sys.getenv("MY_COHORT_SCHEMA"),
+  cohortTable = "dalbavancin",
+  cdmSchema = Sys.getenv("MY_CDM_SCHEMA"),
+  careSiteColumn = "x_institutionCode"
+)
 
 ```
+
+Derive the home care site for each cohort entry and write a new table to the cohort schema (with table name *_care_site)
+
+```{r}
+
+deriveHomeCareSite(homeCareSiteSettings)
+
+```
+
+Frequency distribution of cohort persons per home care site 
+
+```{r}
+
+tbl(con,
+    I(paste0(Sys.getenv("MY_COHORT_SCHEMA"), 
+             ".dalbavancin_care_site"))) |>
+  count(x_institutioncode) |>
+  mutate(x_institutioncode = as.character(row_number())) |> 
+  filter(n >= 50) |> 
+  ggplot(aes(x = n, 
+             y = fct_reorder(x_institutioncode, n), 
+             fill = x_institutioncode)) +
+  geom_col() +
+  theme(legend.position = 'none') +
+  labs(x = 'Number of cohort entries', 
+       y = 'Care site code (de-identified)',
+       title = 'Home care site of cohort members',
+       subtitle = 'Excludes sites with n < 50')
+  
+
+```
+

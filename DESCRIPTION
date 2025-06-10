@@ -1,16 +1,15 @@
-Package: HomeStation
+Package: HomeCareSite
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Derives the "home" care site of entries in a cohort table
 Version: 0.1.0
 Authors@R: c(
     person(
-      "Jane", "Doe",
-      email = "jane@example.com",
+      "William", "O'Brien",
+      email = "william.obrien@va.gov",
       role = c("aut", "cre")
     )
   )
-Description: More about what it does (maybe more than one line).
-    Continuation lines should be indented.
+Description:Derives the "home" care site of entries in a cohort table
 License: What license is it under?
 Encoding: UTF-8
 LazyData: true
@@ -19,5 +18,7 @@ Imports:
   DatabaseConnector,
   dplyr,
   magrittr,
-  tidyr
+  tidyr,
+  SqlRender,
+  checkmate 
   
