@@ -25,7 +25,7 @@ Sys.setenv(DATABASECONNECTOR_JAR_FOLDER = "O:/VINCI_OHDSI/JDBC/sqljdbc_6.0/enu/j
 
 connectionDetails <- DatabaseConnector::createConnectionDetails(
   dbms = "sql server",
-  server = "vhacdwdwhdbs102")
+  server = Sys.getenv(myDevServer))
 
 con <- DatabaseConnector::connect(connectionDetails)
 
@@ -37,11 +37,27 @@ The `getHomeStation` method writes a dataframe within the object consisting of t
 
 ```{r output=FALSE}
 
-x <- HomeStation$new(con, 
-                     "cdw_omop.omopv5", 
-                     "ORD_OHDSI.wjo.dalbavancin")
+x <- HomeStation$
+  new(con, 
+      "cdw_omop.omopv5", 
+      "ORD_OHDSI.wjo.dalbavancin", 
+      "majority")$
+  getHomeStation() 
 
-x$getHomeStation() 
+x$homeStation %>% arrange(subject_id)
+
+```
+
+```{r output=FALSE}
+
+x <- HomeStation$
+  new(con, 
+      "cdw_omop.omopv5", 
+      "ORD_OHDSI.wjo.dalbavancin", 
+      "mostRecent")$
+  getHomeStation() 
+
+x$homeStation %>% arrange(subject_id)
 
 ```
 
