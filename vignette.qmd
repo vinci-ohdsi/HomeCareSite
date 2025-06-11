@@ -10,24 +10,34 @@ editor: source
 
 ## Introduction
 
-The goal of HomeCareSite is to associate entries of a cohort table with a "home" care site. 
+HomeCareSite is an R package for associating entries of a cohort table with a "home" care site. 
 
 The initial implementation identifies the most recent care site prior to cohort entry, and other options will be offered, e.g. care site with plurality of visits. 
+
+## Installation
+
+```{r eval=FALSE}
+
+remotes::install_github("vinci-ohdsi/HomeCareSite") 
+
+```
+
 
 ## Example use
 
 ```{r output=FALSE}
 
-library(HomeCareSite) 
+library(HomeCareSite)
 library(ggplot2) 
 library(dplyr)
 library(forcats)
+library(Andromeda)
+library(knitr)
 
 connectionDetails <- DatabaseConnector::createConnectionDetails(
   dbms = "sql server",
   server = Sys.getenv("MY_DEV_SERVER"))
 
-con <- DatabaseConnector::connect(connectionDetails)
 
 ```
 
@@ -37,7 +47,6 @@ This function returns an S3 object with settings for database and table name inf
 
 homeCareSiteSettings <- createHomeCareSiteSettings(
   connectionDetails, 
-  con,
   cohortSchema = Sys.getenv("MY_COHORT_SCHEMA"),
   cohortTable = "dalbavancin",
   cdmSchema = Sys.getenv("MY_CDM_SCHEMA"),
@@ -46,34 +55,53 @@ homeCareSiteSettings <- createHomeCareSiteSettings(
 
 ```
 
-Derive the home care site for each cohort entry and write a new table to the cohort schema (with table name *_care_site)
+Derive the home care site for each cohort entry. This writes a new table to the cohort schema (with table name [cohort]_care_site) and returns a reference to the remote table. 
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 
-deriveHomeCareSite(homeCareSiteSettings)
+result <- deriveHomeCareSite(homeCareSiteSettings)
 
 ```
 
-Frequency distribution of cohort persons per home care site 
+S3 generic `summary` method returns data computed on server side
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 
-tbl(con,
-    I(paste0(Sys.getenv("MY_COHORT_SCHEMA"), 
-             ".dalbavancin_care_site"))) |>
-  count(x_institutioncode) |>
-  mutate(x_institutioncode = as.character(row_number())) |> 
+summary(result)$freq |> 
+  arrange(desc(N)) |>
+  head() |>
+  mutate(HOMECARESITE = paste0("site_", LETTERS[1:6])) |>
+  kable() 
+
+```
+
+Download table from server to local Andromeda database
+
+```{r message=FALSE, warning=FALSE}
+
+andromeda <- Andromeda::andromeda()
+andromeda$derivedCareSites <- downloadHomeCareSite(result)
+names(andromeda$derivedCareSites) <- tolower(names(andromeda$derivedCareSites))
+
+```
+
+Use local data for analysis and reporting (of course this could also be done with `dplyr::tbl()` on the server side)
+
+```{r warning=FALSE, message=FALSE}
+
+andromeda$derivedCareSites |>
+  count(homecaresite) |>
+  mutate(homecaresite = as.character(row_number())) |> 
   filter(n >= 50) |> 
   ggplot(aes(x = n, 
-             y = fct_reorder(x_institutioncode, n), 
-             fill = x_institutioncode)) +
+             y = fct_reorder(homecaresite, n), 
+             fill = homecaresite)) +
   geom_col() +
   theme(legend.position = 'none') +
   labs(x = 'Number of cohort entries', 
        y = 'Care site code (de-identified)',
        title = 'Home care site of cohort members',
        subtitle = 'Excludes sites with n < 50')
-  
 
 ```
 

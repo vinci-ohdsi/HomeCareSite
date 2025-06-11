@@ -9,7 +9,7 @@ Authors@R: c(
       role = c("aut", "cre")
     )
   )
-Description:Derives the "home" care site of entries in a cohort table
+Description: Derives the "home" care site of entries in a cohort table
 License: What license is it under?
 Encoding: UTF-8
 LazyData: true
@@ -20,5 +20,6 @@ Imports:
   magrittr,
   tidyr,
   SqlRender,
-  checkmate 
-  
+  checkmate, 
+  Andromeda
+RoxygenNote: 7.3.1

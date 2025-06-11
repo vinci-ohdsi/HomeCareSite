@@ -30,7 +30,7 @@ select cohort_definition_id,
     subject_id,
     cohort_start_date,
     cohort_end_date,
-    @care_site_column
+    @care_site_column homeCareSite
 into @cohort_schema.@cohort_table_new
 from visits
 where sort_order = 1
