@@ -1,5 +1,3 @@
-
-
 #' Creates settings object
 #'
 #' @param connectionDetails connection details for DatabaseConnector
@@ -24,6 +22,11 @@ createHomeCareSiteSettings <- function(connectionDetails = NULL,
 
   checkmate::assertClass(connectionDetails, "ConnectionDetails", null.ok = TRUE)
   checkmate::assertClass(con, "DatabaseConnectorJdbcConnection", null.ok = TRUE)
+    
+  if (is.null(connectionDetails) & is.null(connectionDetails)) {
+    stop("Must provide either connectionDetails or connection")
+  }
+    
 
   settings <- list(connectionDetails = connectionDetails,
                    con = con,
